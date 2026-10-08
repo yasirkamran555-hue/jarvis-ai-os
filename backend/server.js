@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import aiRoutes from './routes/ai.js';
 import systemRoutes from './routes/system.js';
 import executionRoutes from './routes/execution.js';
+import advancedRoutes from './routes/advanced.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/ai', aiRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/execution', executionRoutes);
+app.use('/api/advanced', advancedRoutes);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
