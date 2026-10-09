@@ -1,9 +1,33 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+ipcMain.handle('browser:open-youtube', async (event) => {
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  const browserWindow = new BrowserWindow({
+    parent,
+    width: 1280,
+    height: 900,
+    minWidth: 800,
+    minHeight: 600,
+    title: 'YouTube',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    }
+  });
+
+  try {
+    await browserWindow.loadURL('https://www.youtube.com/');
+  } catch (error) {
+    browserWindow.destroy();
+    throw error;
+  }
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,7 +39,8 @@ function createWindow() {
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs')
     }
   });
 

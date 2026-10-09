@@ -27,6 +27,6 @@
   "devDependencies": {
     "concurrently": "^9.0.1",
     "electron": "^31.7.0",
-    "nodemon": "^3.1.16"
+    "nodemon": "^3.1.14"
   }
 }

@@ -15,6 +15,10 @@ const queryTypes = [
   { id: 'factcheck', label: '✓ Fact-check', icon: '🔍' }
 ];
 
+function isYouTubeOpenCommand(prompt) {
+  return /\b(?:open|launch|go to|navigate to|show me)\b[\s\S]{0,60}\b(?:youtube(?:\.com)?|youtu\.be)\b/i.test(prompt);
+}
+
 export default function GrokChat() {
   const [messages, setMessages] = useState([
     {
@@ -48,6 +52,24 @@ export default function GrokChat() {
     setLoading(true);
 
     try {
+      if (isYouTubeOpenCommand(input)) {
+        if (window.jarvis?.openYoutube) {
+          await window.jarvis.openYoutube();
+        } else {
+          const youtubeWindow = window.open('https://www.youtube.com/', '_blank');
+          if (!youtubeWindow) {
+            throw new Error('Your browser blocked the YouTube tab. Allow pop-ups for this app and try again.');
+          }
+          youtubeWindow.opener = null;
+        }
+
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Opened YouTube in a new window.'
+        }]);
+        return;
+      }
+
       let endpoint = '/advanced/query';
       let payload = {
         prompt: input,

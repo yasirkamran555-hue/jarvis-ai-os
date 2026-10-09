@@ -36,6 +36,10 @@ npm run dev
 npm run start:electron
 ```
 
+In chat, send **"open youtube inside of your instance"** to open YouTube in a
+separate window owned by the desktop app. When using the web app, it opens
+YouTube in a new browser tab; allow pop-ups for the app if your browser blocks it.
+
 ## Environment
 
 Copy `.env.example` to `.env` and add your key(s) if using cloud providers.
