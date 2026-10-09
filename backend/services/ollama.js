@@ -1,9 +1,9 @@
-export async function callOllama(prompt, model = 'llama3.1') {
+export async function callOllama(prompt, model = process.env.OLLAMA_MODEL || 'llama3.1:8b') {
   const numCtx = Number(process.env.OLLAMA_NUM_CTX || 2048);
   if (!Number.isInteger(numCtx) || numCtx <= 0) {
     throw new Error('OLLAMA_NUM_CTX must be a positive integer.');
   }
-  const numPredict = Number(process.env.OLLAMA_NUM_PREDICT || 512);
+  const numPredict = Number(process.env.OLLAMA_NUM_PREDICT || 256);
   if (!Number.isInteger(numPredict) || numPredict <= 0) {
     throw new Error('OLLAMA_NUM_PREDICT must be a positive integer.');
   }
@@ -13,13 +13,15 @@ export async function callOllama(prompt, model = 'llama3.1') {
   }
 
   try {
-    const response = await fetch(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/generate`, {
+    const ollamaUrl = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/+$/, '');
+    const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
         prompt,
         stream: false,
+        keep_alive: process.env.OLLAMA_KEEP_ALIVE || '30m',
         options: {
           temperature: 0.7,
           num_ctx: numCtx,
@@ -35,9 +37,12 @@ export async function callOllama(prompt, model = 'llama3.1') {
     }
 
     const data = await response.json();
-    return data?.response || 'No response returned from Ollama.';
+    if (typeof data?.response !== 'string' || !data.response.trim()) {
+      throw new Error('Ollama returned an empty response.');
+    }
+    return data.response;
   } catch (error) {
-    if (error.name === 'TimeoutError') {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
       throw new Error(`Ollama request timed out after ${timeoutMs} ms.`);
     }
     throw new Error(`Local Ollama model unavailable: ${error.message}`);

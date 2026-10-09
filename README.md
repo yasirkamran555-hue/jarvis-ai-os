@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` and add your key(s) if using cloud providers.
 ## Notes
 
 - Chat replies use the local Ollama model configured by `OLLAMA_MODEL`.
-- The default local model context is 2,048 tokens to reduce memory use; its request timeout is 120 seconds to allow for a cold model start.
+- The local model stays loaded for 30 minutes to avoid repeated cold-start delays. Defaults use a 2,048-token context, 256 generated tokens, and a 120-second request timeout to reduce memory use and keep replies responsive.
 - Gemini and OpenRouter can be configured as optional providers for the basic AI API.
 - The chat UI includes Quick, Balanced, and Deep response modes, persistent local chat history, and web search context.
 - Web search uses Bing results and only shows results matching the query; search availability depends on network access.

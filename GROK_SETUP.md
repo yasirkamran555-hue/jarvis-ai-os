@@ -138,7 +138,7 @@ PORT=4000
 
 # Ollama settings
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1
+OLLAMA_MODEL=llama3.1:8b
 
 # Optional: Cloud providers
 GEMINI_API_KEY=your_key

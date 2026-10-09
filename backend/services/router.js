@@ -1,15 +1,14 @@
 import { callOllama } from './ollama.js';
 import { callGemini } from './gemini.js';
 
-const defaultLocalModel = process.env.OLLAMA_MODEL || 'llama3.1';
-
-export async function routeAIRequest({ prompt, mode = 'local', context = '', selectedModel = defaultLocalModel }) {
+export async function routeAIRequest({ prompt, mode = 'local', context = '', selectedModel }) {
   const safePrompt = `${context ? `${context}\n\n` : ''}${prompt}`;
+  const model = selectedModel || process.env.OLLAMA_MODEL || 'llama3.1:8b';
 
   const attempts = [];
 
   if (mode === 'local' || !process.env.GEMINI_API_KEY) {
-    attempts.push({ provider: 'local', runner: () => callOllama(safePrompt, selectedModel) });
+    attempts.push({ provider: 'local', runner: () => callOllama(safePrompt, model) });
   }
 
   if (process.env.GEMINI_API_KEY) {
@@ -44,7 +43,7 @@ export async function routeAIRequest({ prompt, mode = 'local', context = '', sel
   if (attempts.length === 0) {
     return {
       provider: 'local',
-      model: selectedModel,
+      model,
       response: 'No providers configured. Ensure Ollama is running locally or add API keys to the .env file.',
       fallback: false
     };
@@ -67,13 +66,15 @@ export async function routeAIRequest({ prompt, mode = 'local', context = '', sel
     }
   }
 
-  const fallbackResponse = await callOllama(safePrompt, selectedModel).catch(() => {
-    throw new Error(lastError?.message || 'All AI providers failed.');
-  });
+  if (attempts.some(attempt => attempt.provider === 'local')) {
+    throw lastError || new Error('All AI providers failed.');
+  }
+
+  const fallbackResponse = await callOllama(safePrompt, model);
 
   return {
     provider: 'local',
-    model: selectedModel,
+    model,
     response: fallbackResponse,
     fallback: true
   };
