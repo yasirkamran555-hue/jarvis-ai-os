@@ -50,6 +50,8 @@ Copy `.env.example` to `.env` and add your key(s) if using cloud providers.
 - The local model stays loaded for 30 minutes to avoid repeated cold-start delays. Defaults use a 2,048-token context, 256 generated tokens, and a 120-second request timeout to reduce memory use and keep replies responsive.
 - Gemini and OpenRouter can be configured as optional providers for the basic AI API.
 - The chat UI includes Quick, Balanced, and Deep response modes, persistent local chat history, and web search context.
+- Conversations, response preferences, saved memories, and uploaded files are stored in the local SQLite database at `data/jarvis.db`. Manage memories and files with **Your personal data** in the sidebar. Memories are added to local chat context; uploaded files are stored for download and are not sent to the model.
+- The backend listens on `127.0.0.1` by default so this personal data API is not exposed to other devices on the network. The database is not encrypted; protect access to your Windows account and app folder.
 - Web search uses Bing results and only shows results matching the query; search availability depends on network access.
 - The desktop app can open YouTube inside JARVIS; the web app navigates the current tab because YouTube blocks iframe embedding.
 

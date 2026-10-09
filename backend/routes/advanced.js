@@ -1,5 +1,6 @@
 import express from 'express';
 import { processAdvancedQuery, ConversationManager, detectIntent } from '../services/advancedAI.js';
+import { listMemories } from '../db.js';
 
 const router = express.Router();
 const conversationManagers = new Map();
@@ -15,6 +16,12 @@ function getConversationManager(sessionId) {
     conversationManagers.set(sessionId, new ConversationManager());
   }
   return conversationManagers.get(sessionId);
+}
+
+async function getPersonalContext(context) {
+  const memories = await listMemories();
+  const memoryContext = memories.map(memory => `- ${memory.content}`).join('\n').slice(0, 8000);
+  return [context, memoryContext && `Saved personal memories:\n${memoryContext}`].filter(Boolean).join('\n\n');
 }
 
 router.post('/query', async (req, res) => {
@@ -44,7 +51,7 @@ router.post('/query', async (req, res) => {
       queryType,
       includeSearch: includeSearch || queryType === 'search',
       conversationHistory,
-      context: context || manager.context,
+      context: await getPersonalContext(context || manager.context),
       mode
     });
 
@@ -78,7 +85,7 @@ router.post('/reason', async (req, res) => {
       queryType: 'reasoning',
       includeSearch,
       conversationHistory: manager.getContext(),
-      context: context || manager.context,
+      context: await getPersonalContext(context || manager.context),
       mode: normalizeMode(requestedMode)
     });
 
@@ -106,7 +113,7 @@ router.post('/factcheck', async (req, res) => {
       queryType: 'factcheck',
       includeSearch,
       conversationHistory: manager.getContext(),
-      context: context || manager.context,
+      context: await getPersonalContext(context || manager.context),
       mode: normalizeMode(requestedMode)
     });
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import PersonalDataPanel from './PersonalDataPanel.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -49,6 +50,15 @@ function loadChats() {
   }
 }
 
+function loadPreferences() {
+  try {
+    return JSON.parse(localStorage.getItem('jarvis-preferences') || '{}');
+  } catch (error) {
+    console.warn('Could not restore saved preferences:', error);
+    return {};
+  }
+}
+
 function isYouTubeOpenCommand(prompt) {
   return /\b(?:open|launch|go to|navigate to|show me)\b[\s\S]{0,60}\b(?:youtube(?:\.com)?|youtu\.be)\b/i.test(prompt);
 }
@@ -71,11 +81,15 @@ export default function GrokChat() {
   });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [responseMode, setResponseMode] = useState('balanced');
-  const [queryType, setQueryType] = useState('general');
-  const [includeSearch, setIncludeSearch] = useState(false);
+  const [responseMode, setResponseMode] = useState(() => loadPreferences().responseMode || 'balanced');
+  const [queryType, setQueryType] = useState(() => loadPreferences().queryType || 'general');
+  const [includeSearch, setIncludeSearch] = useState(() => loadPreferences().includeSearch === true);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [personalDataOpen, setPersonalDataOpen] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
+  const [storageAvailable, setStorageAvailable] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const requestController = useRef(null);
   const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
@@ -84,9 +98,124 @@ export default function GrokChat() {
   const conversationTitle = messages.find(message => message.role === 'user')?.content;
 
   useEffect(() => {
-    localStorage.setItem('jarvis-chats', JSON.stringify(chats));
-    localStorage.setItem('jarvis-active-chat', sessionId);
-  }, [chats, sessionId]);
+    let active = true;
+    const restoreLocalData = async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/data`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
+
+        let storedChats = data.chats;
+        const legacyChats = loadChats();
+        if (storedChats.length === 0 && legacyChats.length > 0) {
+          const importResponse = await fetch(`${BASE_URL}/data/chats/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chats: legacyChats })
+          });
+          const importData = await importResponse.json();
+          if (!importResponse.ok) throw new Error(importData.error || `Chat import failed (HTTP ${importResponse.status}).`);
+          storedChats = legacyChats;
+        } else if (legacyChats.length > 0) {
+          const legacyIds = new Set(legacyChats.map(chat => chat.id));
+          storedChats = [...legacyChats, ...storedChats.filter(chat => !legacyIds.has(chat.id))].slice(0, 50);
+        }
+
+        if (!active) return;
+        setChats(storedChats);
+        const savedSessionId = localStorage.getItem('jarvis-active-chat');
+        setSessionId(storedChats.some(chat => chat.id === savedSessionId)
+          ? savedSessionId
+          : (storedChats[0]?.id || `session-${Date.now()}`));
+        setResponseMode(responseModes.some(mode => mode.id === data.preferences.responseMode)
+          ? data.preferences.responseMode
+          : 'balanced');
+        setQueryType(queryTypes.some(type => type.id === data.preferences.queryType)
+          ? data.preferences.queryType
+          : 'general');
+        setIncludeSearch(data.preferences.includeSearch === true);
+        setStorageAvailable(true);
+        setStorageError('');
+      } catch (error) {
+        if (!active) return;
+        console.error('Could not load local JARVIS data:', error);
+        setStorageError(`Local database unavailable: ${error.message}. Chats will stay in this browser until storage is restored.`);
+      } finally {
+        if (active) setDataReady(true);
+      }
+    };
+
+    restoreLocalData();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!dataReady) return;
+    try {
+      localStorage.setItem('jarvis-chats', JSON.stringify(chats));
+      localStorage.setItem('jarvis-active-chat', sessionId);
+      localStorage.setItem('jarvis-preferences', JSON.stringify({ responseMode, queryType, includeSearch }));
+    } catch (error) {
+      console.error('Could not save the browser backup of JARVIS data:', error);
+      setStorageError(`Browser backup could not be saved: ${error.message}.`);
+    }
+    if (!storageAvailable) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const [chatResponse, preferenceResponse] = await Promise.all([
+          fetch(`${BASE_URL}/data/chats`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chats })
+          }),
+          fetch(`${BASE_URL}/data/preferences`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ responseMode, queryType, includeSearch })
+          })
+        ]);
+        for (const response of [chatResponse, preferenceResponse]) {
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
+          }
+        }
+        setStorageError('');
+      } catch (error) {
+        console.error('Could not persist JARVIS data:', error);
+        setStorageAvailable(false);
+        setStorageError(`Could not save to the local database: ${error.message}. Your browser backup is still available.`);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [chats, sessionId, responseMode, queryType, includeSearch, dataReady, storageAvailable]);
+
+  const retryLocalStorage = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/data`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
+      if (data.chats.length === 0 && chats.length > 0) {
+        const importResponse = await fetch(`${BASE_URL}/data/chats/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chats })
+        });
+        const importData = await importResponse.json();
+        if (!importResponse.ok) throw new Error(importData.error || `Chat import failed (HTTP ${importResponse.status}).`);
+      } else {
+        const localIds = new Set(chats.map(chat => chat.id));
+        setChats([...chats, ...data.chats.filter(chat => !localIds.has(chat.id))].slice(0, 50));
+      }
+      setStorageAvailable(true);
+      setStorageError('');
+    } catch (error) {
+      console.error('Could not reconnect to the local JARVIS database:', error);
+      setStorageError(`Local database is still unavailable: ${error.message}.`);
+    }
+  };
 
   const updateChatMessages = (chatId, update) => {
     setChats(current => {
@@ -218,7 +347,7 @@ export default function GrokChat() {
         <button
           type="button"
           onClick={handleNewChat}
-          disabled={loading}
+              disabled={loading || !dataReady}
           className="mb-5 flex h-11 items-center gap-3 rounded-full bg-[#e7e9ea] px-4 text-sm font-semibold text-black transition hover:bg-white disabled:opacity-50"
         >
           <span className="text-xl leading-none">+</span>
@@ -267,11 +396,23 @@ export default function GrokChat() {
           )}
         </div>
 
+        <button
+          type="button"
+          onClick={() => {
+            setPersonalDataOpen(true);
+            setSidebarOpen(false);
+          }}
+          className="mb-3 flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-[#aab3bb] hover:bg-white/5 hover:text-white"
+        >
+          <span aria-hidden="true">▤</span>
+          <span>Your personal data</span>
+        </button>
+
         <div className="mt-auto flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-white/5">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#263746] text-sm font-semibold">J</span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">JARVIS AI OS</p>
-            <p className="text-xs text-[#717b85]">Local assistant</p>
+            <p className="text-xs text-[#717b85]">Local data storage</p>
           </div>
         </div>
       </aside>
@@ -303,6 +444,13 @@ export default function GrokChat() {
             </select>
           </label>
         </header>
+
+        {storageError && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-300/20 bg-amber-300/5 px-4 py-2 text-xs text-amber-100/90 md:px-7">
+            <span>{storageError}</span>
+            {!storageAvailable && <button type="button" onClick={retryLocalStorage} className="rounded-full border border-amber-100/20 px-3 py-1 hover:bg-white/5">Retry local storage</button>}
+          </div>
+        )}
 
         <div className="flex min-h-0 flex-1 flex-col">
           {youtubeOpen && (
@@ -397,7 +545,7 @@ export default function GrokChat() {
                 aria-label="Message Grok"
                 className="max-h-40 min-h-12 w-full resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-6 text-white outline-none placeholder:text-[#717b85]"
                 rows="1"
-                disabled={loading}
+                disabled={loading || !dataReady}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -429,7 +577,7 @@ export default function GrokChat() {
                 <button
                   type="button"
                   onClick={loading ? handleStop : handleSend}
-                  disabled={!loading && !input.trim()}
+                  disabled={!loading && (!input.trim() || !dataReady)}
                   aria-label={loading ? 'Stop generating' : 'Send message'}
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg font-semibold transition ${
                     loading
@@ -445,6 +593,7 @@ export default function GrokChat() {
           </div>
         </div>
       </main>
+      <PersonalDataPanel open={personalDataOpen} onClose={() => setPersonalDataOpen(false)} />
     </div>
   );
 }
