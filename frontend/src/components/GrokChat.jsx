@@ -42,8 +42,9 @@ export default function GrokChat() {
   const [queryType, setQueryType] = useState('general');
   const [includeSearch, setIncludeSearch] = useState(false);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
-  const [sessionId] = useState(`session-${Date.now()}`);
+  const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`);
   const messagesEndRef = useRef(null);
+  const conversationTitle = messages.find(message => message.role === 'user')?.content;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -127,165 +128,220 @@ export default function GrokChat() {
     }
   };
 
+  const handleNewChat = () => {
+    setMessages([{
+      role: 'assistant',
+      content: '⚡ I\'m Grok. Ask me anything - reasoning, analysis, code review, fact-checking, or just conversation. What\'s on your mind?',
+      isInitial: true
+    }]);
+    setInput('');
+    setYoutubeOpen(false);
+    setSessionId(`session-${Date.now()}`);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-purple-900/5 to-slate-950 p-4">
-      <div className="mx-auto max-w-4xl">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <div className="inline-block rounded-2xl border border-purple-500/30 bg-purple-900/20 px-8 py-4 backdrop-blur">
-            <h1 className="text-4xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 bg-clip-text text-transparent">
-              ⚡ GROK
-            </h1>
-            <p className="text-xs text-purple-300 mt-2">Advanced AI Reasoning Engine</p>
-          </div>
+    <div className="flex h-screen min-h-[560px] overflow-hidden bg-[#0b0f14] text-[#e7e9ea]">
+      <aside className="hidden w-[260px] shrink-0 flex-col border-r border-white/10 bg-[#0b0f14] px-3 py-4 md:flex">
+        <div className="mb-7 flex items-center gap-3 px-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg font-bold text-black">𝕏</span>
+          <span className="text-lg font-semibold tracking-tight">Grok</span>
         </div>
 
-        {/* Controls */}
-        <div className="mb-6 space-y-4 rounded-2xl border border-purple-500/20 bg-slate-900/40 backdrop-blur p-4">
-          {/* Response Mode */}
-          <div>
-            <p className="text-xs uppercase tracking-[0.2rem] text-purple-400 mb-2">⚙️ Mode</p>
-            <div className="grid grid-cols-3 gap-2">
-              {responseModes.map(mode => (
-                <button
-                  key={mode.id}
-                  onClick={() => setResponseMode(mode.id)}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
-                    responseMode === mode.id
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/50'
-                      : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        <button
+          type="button"
+          onClick={handleNewChat}
+          disabled={loading}
+          className="mb-5 flex h-11 items-center gap-3 rounded-full bg-[#e7e9ea] px-4 text-sm font-semibold text-black transition hover:bg-white disabled:opacity-50"
+        >
+          <span className="text-xl leading-none">+</span>
+          New chat
+        </button>
 
-          {/* Query Types */}
-          <div>
-            <p className="text-xs uppercase tracking-[0.2rem] text-purple-400 mb-2">🎯 Type</p>
-            <div className="grid grid-cols-4 gap-2">
-              {queryTypes.map(type => (
-                <button
-                  key={type.id}
-                  onClick={() => setQueryType(type.id)}
-                  className={`rounded-lg px-2 py-2 text-xs font-medium transition ${
-                    queryType === type.id
-                      ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/50'
-                      : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
+        <nav className="space-y-1" aria-label="Main navigation">
+          <div className="flex items-center gap-4 rounded-full bg-white/10 px-4 py-3 text-sm font-medium">
+            <span aria-hidden="true">✳</span>
+            <span>Grok</span>
           </div>
+          <div className="flex items-center gap-4 rounded-full px-4 py-3 text-sm text-[#8b98a5]">
+            <span aria-hidden="true">⌕</span>
+            <span>Explore</span>
+          </div>
+        </nav>
 
-          {/* Toggle Search */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeSearch}
-              onChange={(e) => setIncludeSearch(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <span className="text-xs text-slate-300">🔍 Include search context</span>
+        <div className="mt-8 px-3">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#717b85]">Recent</p>
+          {conversationTitle ? (
+            <button
+              type="button"
+              title={conversationTitle}
+              className="w-full truncate rounded-lg px-2 py-2 text-left text-sm text-[#aab3bb] hover:bg-white/5 hover:text-white"
+            >
+              {conversationTitle}
+            </button>
+          ) : (
+            <p className="px-2 text-sm text-[#717b85]">Your chats will appear here</p>
+          )}
+        </div>
+
+        <div className="mt-auto flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-white/5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#263746] text-sm font-semibold">J</span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">JARVIS AI OS</p>
+            <p className="text-xs text-[#717b85]">Local assistant</p>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-4 md:px-7">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-bold text-black md:hidden">𝕏</span>
+            <h1 className="text-lg font-semibold tracking-tight">Grok</h1>
+            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-[#aab3bb]">Beta</span>
+          </div>
+          <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-[#c5cbd1]">
+            <span className="text-[#8b98a5]">Mode</span>
+            <select
+              aria-label="Response mode"
+              value={responseMode}
+              onChange={event => setResponseMode(event.target.value)}
+              className="max-w-28 cursor-pointer border-0 bg-transparent p-0 text-xs text-white outline-none"
+            >
+              {responseModes.map(mode => <option key={mode.id} value={mode.id} className="bg-[#111820]">{mode.label}</option>)}
+            </select>
           </label>
-        </div>
+        </header>
 
-        {youtubeOpen && (
-          <section className="mb-6 overflow-hidden rounded-2xl border border-red-500/30 bg-slate-950 shadow-xl" aria-label="YouTube browser">
-            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-100">YouTube</h2>
-              <button
-                type="button"
-                onClick={() => setYoutubeOpen(false)}
-                className="rounded-md bg-slate-800 px-3 py-1 text-sm text-slate-200 hover:bg-slate-700"
-              >
-                Close
-              </button>
-            </div>
-            <webview
-              src={getYouTubeUrl(messages.filter(message => message.role === 'user').at(-1)?.content || '')}
-              title="YouTube"
-              allowpopups="true"
-              webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"
-              className="h-[70vh] min-h-[480px] w-full bg-white"
-            />
-          </section>
-        )}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {youtubeOpen && (
+            <section className="mx-auto mt-4 w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-black" aria-label="YouTube browser">
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                <h2 className="text-sm font-semibold">YouTube</h2>
+                <button
+                  type="button"
+                  onClick={() => setYoutubeOpen(false)}
+                  className="rounded-full px-3 py-1.5 text-sm text-[#aab3bb] hover:bg-white/10 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+              <webview
+                src={getYouTubeUrl(messages.filter(message => message.role === 'user').at(-1)?.content || '')}
+                title="YouTube"
+                allowpopups="true"
+                webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"
+                className="h-[55vh] min-h-[360px] w-full bg-white"
+              />
+            </section>
+          )}
 
-        {/* Chat Area */}
-        <div className="mb-6 rounded-2xl border border-purple-500/20 bg-slate-900/60 backdrop-blur p-6 space-y-4 max-h-96 overflow-y-auto">
-          {messages.map((message, index) => (
-            <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-2xl rounded-lg px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                    : message.role === 'system'
-                    ? 'bg-slate-800/50 text-slate-300 text-xs italic'
-                    : 'bg-slate-800/80 text-slate-100'
-                }`}
-              >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                {message.searchResults && (
-                  <div className="mt-2 space-y-1 border-t border-slate-700/50 pt-2">
-                    {message.searchResults.map((result, i) => (
-                      <a
-                        key={i}
-                        href={result.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-xs text-purple-300 hover:text-purple-200"
-                      >
-                        {result.title}
-                      </a>
-                    ))}
+          <section
+            className={`min-h-0 flex-1 overflow-y-auto px-4 md:px-8 ${messages.length === 1 && messages[0].isInitial ? 'flex items-center justify-center' : ''}`}
+            aria-label="Conversation"
+          >
+            {messages.length === 1 && messages[0].isInitial ? (
+              <div className="mx-auto max-w-2xl pb-16 text-center">
+                <div className="mb-5 text-4xl text-white">✳</div>
+                <h2 className="mb-3 text-3xl font-semibold tracking-tight sm:text-4xl">What can I help with?</h2>
+                <p className="text-sm text-[#8b98a5]">Ask anything, explore an idea, or get something done.</p>
+              </div>
+            ) : (
+              <div className="mx-auto max-w-3xl space-y-8 py-8">
+                {messages.filter(message => !message.isInitial).map((message, index) => (
+                  <article key={index} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {message.role !== 'user' && (
+                      <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-black">✳</span>
+                    )}
+                    <div className={`max-w-[85%] ${message.role === 'user' ? 'rounded-3xl bg-[#202a33] px-5 py-3' : 'pt-2'}`}>
+                      <p className={`whitespace-pre-wrap text-[15px] leading-7 ${message.role === 'system' ? 'text-sm text-[#8b98a5]' : 'text-[#e7e9ea]'}`}>{message.content}</p>
+                      {message.searchResults && (
+                        <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                          {message.searchResults.map((result, resultIndex) => (
+                            <a
+                              key={resultIndex}
+                              href={result.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-sm text-sky-300 hover:text-sky-200"
+                            >
+                              {result.title}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {loading && (
+                  <div className="flex items-center gap-3 text-sm text-[#8b98a5]" role="status">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-bold text-black">✳</span>
+                    Grok is thinking…
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-800/80 text-slate-300 px-4 py-3 rounded-lg">
-                <div className="flex gap-2 items-center">
-                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs">Thinking...</span>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+            )}
+          </section>
 
-        {/* Input */}
-        <div className="flex gap-3">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="Ask Grok anything... (Shift+Enter for new line)"
-            className="flex-1 rounded-lg border border-purple-500/30 bg-slate-900/80 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-purple-500 focus:outline-none resize-none"
-            rows="3"
-            disabled={loading}
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-3 font-bold text-white shadow-lg shadow-purple-500/30 transition hover:opacity-90 disabled:opacity-50 self-end"
-          >
-            {loading ? '⏳' : '→'}
-          </button>
+          <div className="shrink-0 px-4 pb-5 pt-3 md:px-8">
+            <div className="mx-auto max-w-3xl rounded-[28px] border border-white/15 bg-[#151a20] px-4 py-3 shadow-lg transition focus-within:border-white/25">
+              <textarea
+                value={input}
+                onChange={event => setInput(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Ask anything"
+                aria-label="Message Grok"
+                className="max-h-40 min-h-12 w-full resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-6 text-white outline-none placeholder:text-[#717b85]"
+                rows="1"
+                disabled={loading}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {queryTypes.map(type => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setQueryType(type.id)}
+                      aria-pressed={queryType === type.id}
+                      className={`rounded-full px-3 py-1.5 text-xs transition ${
+                        queryType === type.id
+                          ? 'bg-white/15 text-white'
+                          : 'text-[#8b98a5] hover:bg-white/5 hover:text-[#e7e9ea]'
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-1.5 text-xs text-[#8b98a5] hover:bg-white/5 hover:text-white">
+                    <input
+                      type="checkbox"
+                      checked={includeSearch}
+                      onChange={event => setIncludeSearch(event.target.checked)}
+                      className="accent-white"
+                    />
+                    Search context
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={loading || !input.trim()}
+                  aria-label="Send message"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-lg font-semibold text-black transition hover:bg-[#d7dbdf] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-[#717b85]"
+                >
+                  {loading ? '…' : '↑'}
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-center text-[11px] text-[#717b85]">Grok can make mistakes. Check important information.</p>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
