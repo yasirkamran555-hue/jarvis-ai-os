@@ -3,6 +3,12 @@ import { processAdvancedQuery, ConversationManager, detectIntent } from '../serv
 
 const router = express.Router();
 const conversationManagers = new Map();
+const supportedQueryTypes = new Set(['general', 'reasoning', 'search', 'factcheck', 'code-review', 'creative']);
+const supportedModes = new Set(['quick', 'balanced', 'advanced']);
+
+function normalizeMode(mode) {
+  return supportedModes.has(mode) ? mode : 'balanced';
+}
 
 function getConversationManager(sessionId) {
   if (!conversationManagers.has(sessionId)) {
@@ -13,14 +19,24 @@ function getConversationManager(sessionId) {
 
 router.post('/query', async (req, res) => {
   try {
-    const { prompt, sessionId = 'default', includeSearch = false, context = '' } = req.body;
+    const {
+      prompt,
+      sessionId = 'default',
+      includeSearch = false,
+      context = '',
+      mode: requestedMode,
+      queryType: requestedQueryType
+    } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ ok: false, error: 'Prompt is required' });
     }
 
     const manager = getConversationManager(sessionId);
-    const queryType = detectIntent(prompt);
+    const mode = normalizeMode(requestedMode);
+    const queryType = supportedQueryTypes.has(requestedQueryType)
+      ? requestedQueryType
+      : detectIntent(prompt);
     const conversationHistory = manager.getContext();
 
     const result = await processAdvancedQuery({
@@ -28,7 +44,8 @@ router.post('/query', async (req, res) => {
       queryType,
       includeSearch: includeSearch || queryType === 'search',
       conversationHistory,
-      context: context || manager.context
+      context: context || manager.context,
+      mode
     });
 
     manager.addMessage('user', prompt, { intent: queryType });
@@ -43,7 +60,13 @@ router.post('/query', async (req, res) => {
 
 router.post('/reason', async (req, res) => {
   try {
-    const { prompt, context = '', sessionId = 'default' } = req.body;
+    const {
+      prompt,
+      context = '',
+      sessionId = 'default',
+      includeSearch = false,
+      mode: requestedMode
+    } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ ok: false, error: 'Prompt is required' });
@@ -53,8 +76,10 @@ router.post('/reason', async (req, res) => {
     const result = await processAdvancedQuery({
       prompt,
       queryType: 'reasoning',
+      includeSearch,
       conversationHistory: manager.getContext(),
-      context
+      context: context || manager.context,
+      mode: normalizeMode(requestedMode)
     });
 
     manager.addMessage('user', prompt, { intent: 'reasoning' });
@@ -69,7 +94,7 @@ router.post('/reason', async (req, res) => {
 
 router.post('/factcheck', async (req, res) => {
   try {
-    const { statement, sessionId = 'default' } = req.body;
+    const { statement, sessionId = 'default', includeSearch = false, context = '', mode: requestedMode } = req.body;
 
     if (!statement) {
       return res.status(400).json({ ok: false, error: 'Statement is required' });
@@ -79,7 +104,10 @@ router.post('/factcheck', async (req, res) => {
     const result = await processAdvancedQuery({
       prompt: statement,
       queryType: 'factcheck',
-      conversationHistory: manager.getContext()
+      includeSearch,
+      conversationHistory: manager.getContext(),
+      context: context || manager.context,
+      mode: normalizeMode(requestedMode)
     });
 
     manager.addMessage('user', `Fact-check: ${statement}`);

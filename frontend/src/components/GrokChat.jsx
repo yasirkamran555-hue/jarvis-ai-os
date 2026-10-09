@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -15,6 +17,38 @@ const queryTypes = [
   { id: 'factcheck', label: '✓ Fact-check', icon: '🔍' }
 ];
 
+const welcomeMessage = {
+  role: 'assistant',
+  content: '⚡ I\'m Grok. Ask me anything - reasoning, analysis, code review, fact-checking, or just conversation. What\'s on your mind?',
+  isInitial: true
+};
+
+const markdownComponents = {
+  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h1 className="mb-3 mt-5 text-2xl font-semibold">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-3 mt-5 text-xl font-semibold">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-2 mt-4 text-lg font-semibold">{children}</h3>,
+  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-6">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-6">{children}</ol>,
+  li: ({ children }) => <li>{children}</li>,
+  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline decoration-sky-300/40 underline-offset-2 hover:text-sky-200">{children}</a>,
+  blockquote: ({ children }) => <blockquote className="mb-3 border-l-2 border-white/20 pl-4 text-[#aab3bb]">{children}</blockquote>,
+  pre: ({ children }) => <pre className="mb-3 overflow-x-auto rounded-xl border border-white/10 bg-black/40 p-4 text-sm">{children}</pre>,
+  code: ({ children }) => <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[0.9em] text-[#dbeafe]">{children}</code>
+};
+
+function loadChats() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('jarvis-chats') || '[]');
+    return Array.isArray(saved)
+      ? saved.filter(chat => chat && typeof chat.id === 'string' && Array.isArray(chat.messages))
+      : [];
+  } catch (error) {
+    console.warn('Could not restore saved chats:', error);
+    return [];
+  }
+}
+
 function isYouTubeOpenCommand(prompt) {
   return /\b(?:open|launch|go to|navigate to|show me)\b[\s\S]{0,60}\b(?:youtube(?:\.com)?|youtu\.be)\b/i.test(prompt);
 }
@@ -29,22 +63,40 @@ function getYouTubeUrl(prompt) {
 }
 
 export default function GrokChat() {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: '⚡ I\'m Grok. Ask me anything - reasoning, analysis, code review, fact-checking, or just conversation. What\'s on your mind?',
-      isInitial: true
-    }
-  ]);
+  const [chats, setChats] = useState(loadChats);
+  const [sessionId, setSessionId] = useState(() => {
+    const saved = loadChats();
+    const activeId = localStorage.getItem('jarvis-active-chat');
+    return saved.some(chat => chat.id === activeId) ? activeId : (saved[0]?.id || `session-${Date.now()}`);
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [responseMode, setResponseMode] = useState('balanced');
   const [queryType, setQueryType] = useState('general');
   const [includeSearch, setIncludeSearch] = useState(false);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
-  const [sessionId, setSessionId] = useState(() => `session-${Date.now()}`);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const requestController = useRef(null);
   const messagesEndRef = useRef(null);
+  const composerRef = useRef(null);
+  const activeChat = chats.find(chat => chat.id === sessionId);
+  const messages = activeChat?.messages || [welcomeMessage];
   const conversationTitle = messages.find(message => message.role === 'user')?.content;
+
+  useEffect(() => {
+    localStorage.setItem('jarvis-chats', JSON.stringify(chats));
+    localStorage.setItem('jarvis-active-chat', sessionId);
+  }, [chats, sessionId]);
+
+  const updateChatMessages = (chatId, update) => {
+    setChats(current => {
+      const existing = current.find(chat => chat.id === chatId);
+      const nextMessages = update(existing?.messages || [welcomeMessage]);
+      const nextTitle = existing?.title || nextMessages.find(message => message.role === 'user')?.content?.slice(0, 80) || '';
+      const nextChat = { id: chatId, title: nextTitle, messages: nextMessages, updatedAt: Date.now() };
+      return [nextChat, ...current.filter(chat => chat.id !== chatId)].slice(0, 50);
+    });
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -58,7 +110,8 @@ export default function GrokChat() {
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
+    const chatId = sessionId;
+    updateChatMessages(chatId, previous => [...previous.filter(message => !message.isInitial), userMessage]);
     setInput('');
     setLoading(true);
 
@@ -67,7 +120,7 @@ export default function GrokChat() {
         const youtubeUrl = getYouTubeUrl(input);
         if (window.jarvis?.isElectron) {
           setYoutubeOpen(true);
-          setMessages(prev => [...prev, {
+          updateChatMessages(chatId, previous => [...previous, {
             role: 'assistant',
             content: 'Opened YouTube inside JARVIS.'
           }]);
@@ -80,10 +133,13 @@ export default function GrokChat() {
       let endpoint = '/advanced/query';
       let payload = {
         prompt: input,
-        sessionId,
+        sessionId: chatId,
         includeSearch: includeSearch || queryType === 'search',
-        queryType: queryType === 'general' ? 'general' : queryType
+        queryType: queryType === 'general' ? undefined : queryType,
+        mode: responseMode
       };
+      const controller = new AbortController();
+      requestController.current = controller;
 
       if (queryType === 'reasoning') {
         endpoint = '/advanced/reason';
@@ -95,53 +151,65 @@ export default function GrokChat() {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('API error');
+        throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
       }
 
-      const data = await response.json();
       const assistantMessage = {
         role: 'assistant',
         content: data.response,
         metadata: data.metadata || {}
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      updateChatMessages(chatId, previous => [...previous, assistantMessage]);
 
       if (data.searchResults && data.searchResults.length > 0) {
-        setMessages(prev => [...prev, {
+        updateChatMessages(chatId, previous => [...previous, {
           role: 'system',
           content: `Found ${data.searchResults.length} sources`,
           searchResults: data.searchResults
         }]);
       }
     } catch (error) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `⚠️ Error: ${error.message}`
-      }]);
+      if (error.name !== 'AbortError') {
+        updateChatMessages(chatId, previous => [...previous, {
+          role: 'assistant',
+          content: `⚠️ Error: ${error.message}`
+        }]);
+      }
     } finally {
+      requestController.current = null;
       setLoading(false);
     }
   };
 
+  const handleStop = () => requestController.current?.abort();
+
+  const handleExplore = () => {
+    setQueryType('search');
+    setIncludeSearch(true);
+    setSidebarOpen(false);
+    composerRef.current?.focus();
+  };
+
   const handleNewChat = () => {
-    setMessages([{
-      role: 'assistant',
-      content: '⚡ I\'m Grok. Ask me anything - reasoning, analysis, code review, fact-checking, or just conversation. What\'s on your mind?',
-      isInitial: true
-    }]);
+    const nextId = `session-${Date.now()}`;
+    setChats(current => [{ id: nextId, title: '', messages: [welcomeMessage], updatedAt: Date.now() }, ...current]);
+    setSessionId(nextId);
     setInput('');
     setYoutubeOpen(false);
-    setSessionId(`session-${Date.now()}`);
+    setSidebarOpen(false);
   };
 
   return (
     <div className="flex h-screen min-h-[560px] overflow-hidden bg-[#0b0f14] text-[#e7e9ea]">
-      <aside className="hidden w-[260px] shrink-0 flex-col border-r border-white/10 bg-[#0b0f14] px-3 py-4 md:flex">
+      {sidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-black/60 md:hidden" />}
+      <aside className={`${sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-2xl' : 'hidden md:flex'} w-[260px] shrink-0 flex-col border-r border-white/10 bg-[#0b0f14] px-3 py-4 md:static md:shadow-none`}>
         <div className="mb-7 flex items-center gap-3 px-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg font-bold text-black">𝕏</span>
           <span className="text-lg font-semibold tracking-tight">Grok</span>
@@ -162,22 +230,38 @@ export default function GrokChat() {
             <span aria-hidden="true">✳</span>
             <span>Grok</span>
           </div>
-          <div className="flex items-center gap-4 rounded-full px-4 py-3 text-sm text-[#8b98a5]">
+          <button
+            type="button"
+            onClick={handleExplore}
+            className="flex w-full items-center gap-4 rounded-full px-4 py-3 text-left text-sm text-[#8b98a5] hover:bg-white/5 hover:text-white"
+          >
             <span aria-hidden="true">⌕</span>
             <span>Explore</span>
-          </div>
+          </button>
         </nav>
 
         <div className="mt-8 px-3">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#717b85]">Recent</p>
-          {conversationTitle ? (
-            <button
-              type="button"
-              title={conversationTitle}
-              className="w-full truncate rounded-lg px-2 py-2 text-left text-sm text-[#aab3bb] hover:bg-white/5 hover:text-white"
-            >
-              {conversationTitle}
-            </button>
+          {chats.filter(chat => chat.title).length > 0 ? (
+            <div className="max-h-[45vh] space-y-1 overflow-y-auto">
+              {chats.filter(chat => chat.title).map(chat => (
+                <button
+                  key={chat.id}
+                  type="button"
+                  title={chat.title}
+                  onClick={() => {
+                    setSessionId(chat.id);
+                    setYoutubeOpen(false);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full truncate rounded-lg px-2 py-2 text-left text-sm transition ${
+                    chat.id === sessionId ? 'bg-white/10 text-white' : 'text-[#aab3bb] hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  {chat.title}
+                </button>
+              ))}
+            </div>
           ) : (
             <p className="px-2 text-sm text-[#717b85]">Your chats will appear here</p>
           )}
@@ -195,6 +279,14 @@ export default function GrokChat() {
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-4 md:px-7">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Open navigation"
+              onClick={() => setSidebarOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-[#aab3bb] hover:bg-white/10 md:hidden"
+            >
+              ☰
+            </button>
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-bold text-black md:hidden">𝕏</span>
             <h1 className="text-lg font-semibold tracking-tight">Grok</h1>
             <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-[#aab3bb]">Beta</span>
@@ -253,7 +345,13 @@ export default function GrokChat() {
                       <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-black">✳</span>
                     )}
                     <div className={`max-w-[85%] ${message.role === 'user' ? 'rounded-3xl bg-[#202a33] px-5 py-3' : 'pt-2'}`}>
-                      <p className={`whitespace-pre-wrap text-[15px] leading-7 ${message.role === 'system' ? 'text-sm text-[#8b98a5]' : 'text-[#e7e9ea]'}`}>{message.content}</p>
+                      {message.role === 'user' ? (
+                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-[#e7e9ea]">{message.content}</p>
+                      ) : (
+                        <div className={`text-[15px] leading-7 ${message.role === 'system' ? 'text-sm text-[#8b98a5]' : 'text-[#e7e9ea]'}`}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</ReactMarkdown>
+                        </div>
+                      )}
                       {message.searchResults && (
                         <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
                           {message.searchResults.map((result, resultIndex) => (
@@ -286,6 +384,7 @@ export default function GrokChat() {
           <div className="shrink-0 px-4 pb-5 pt-3 md:px-8">
             <div className="mx-auto max-w-3xl rounded-[28px] border border-white/15 bg-[#151a20] px-4 py-3 shadow-lg transition focus-within:border-white/25">
               <textarea
+                ref={composerRef}
                 value={input}
                 onChange={event => setInput(event.target.value)}
                 onKeyDown={event => {
@@ -329,12 +428,16 @@ export default function GrokChat() {
                 </div>
                 <button
                   type="button"
-                  onClick={handleSend}
-                  disabled={loading || !input.trim()}
-                  aria-label="Send message"
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-lg font-semibold text-black transition hover:bg-[#d7dbdf] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-[#717b85]"
+                  onClick={loading ? handleStop : handleSend}
+                  disabled={!loading && !input.trim()}
+                  aria-label={loading ? 'Stop generating' : 'Send message'}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg font-semibold transition ${
+                    loading
+                      ? 'bg-white/15 text-white hover:bg-white/25'
+                      : 'bg-white text-black hover:bg-[#d7dbdf] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-[#717b85]'
+                  }`}
                 >
-                  {loading ? '…' : '↑'}
+                  {loading ? '■' : '↑'}
                 </button>
               </div>
             </div>

@@ -3,6 +3,10 @@ export async function callOllama(prompt, model = 'llama3.1') {
   if (!Number.isInteger(numCtx) || numCtx <= 0) {
     throw new Error('OLLAMA_NUM_CTX must be a positive integer.');
   }
+  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT_MS || 60000);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('OLLAMA_TIMEOUT_MS must be a positive integer.');
+  }
 
   try {
     const response = await fetch(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/generate`, {
@@ -16,7 +20,8 @@ export async function callOllama(prompt, model = 'llama3.1') {
           temperature: 0.7,
           num_ctx: numCtx
         }
-      })
+      }),
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
     if (!response.ok) {
@@ -27,6 +32,9 @@ export async function callOllama(prompt, model = 'llama3.1') {
     const data = await response.json();
     return data?.response || 'No response returned from Ollama.';
   } catch (error) {
+    if (error.name === 'TimeoutError') {
+      throw new Error(`Ollama request timed out after ${timeoutMs} ms.`);
+    }
     throw new Error(`Local Ollama model unavailable: ${error.message}`);
   }
 }

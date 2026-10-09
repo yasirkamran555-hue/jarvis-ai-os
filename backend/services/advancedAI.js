@@ -5,29 +5,40 @@ export async function processAdvancedQuery({
   queryType = 'general',
   includeSearch = false,
   conversationHistory = [],
-  context = ''
+  context = '',
+  mode = 'balanced'
 }) {
   try {
     let searchResults = [];
 
-    if (includeSearch || shouldSearch(prompt)) {
+    if (includeSearch) {
       searchResults = await searchWeb(prompt);
     }
 
+    const searchContext = searchResults.length
+      ? searchResults.map((result, index) => `${index + 1}. ${result.title}: ${result.snippet} (${result.url})`).join('\n')
+      : '';
+    const fullContext = [context, searchContext].filter(Boolean).join('\n\n');
+    const historyContext = conversationHistory
+      .slice(-5)
+      .map(message => `${message.role}: ${message.content}`)
+      .join('\n');
+    const specializedContext = [context, historyContext, searchContext].filter(Boolean).join('\n\n');
+
     let result;
     if (queryType === 'reasoning') {
-      result = await realtimeReasoning(prompt, context);
+      result = await realtimeReasoning(prompt, specializedContext, mode);
     } else if (queryType === 'factcheck') {
-      result = await factCheck(prompt);
+      result = await factCheck(prompt, specializedContext, mode);
     } else if (queryType === 'code-review') {
-      result = await analyzeCode(prompt, 'javascript');
+      result = await analyzeCode(prompt, 'javascript', mode);
     } else {
       const grokResult = await grokChat({
         prompt,
-        context,
+        context: fullContext,
         conversationHistory,
         searchResults,
-        mode: 'advanced'
+        mode
       });
       result = grokResult.response;
     }
@@ -44,11 +55,6 @@ export async function processAdvancedQuery({
     console.error('Advanced query error', error.message);
     throw error;
   }
-}
-
-function shouldSearch(prompt) {
-  const searchKeywords = ['latest', 'news', 'today', 'current', 'recent', 'now', 'happening', 'trends'];
-  return searchKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
 }
 
 export class ConversationManager {
