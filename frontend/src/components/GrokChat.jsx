@@ -19,6 +19,15 @@ function isYouTubeOpenCommand(prompt) {
   return /\b(?:open|launch|go to|navigate to|show me)\b[\s\S]{0,60}\b(?:youtube(?:\.com)?|youtu\.be)\b/i.test(prompt);
 }
 
+function getYouTubeUrl(prompt) {
+  const search = prompt.match(/\bsearch(?:\s+youtube)?\s+(?:for\s+)?(.+?)(?:\s+and\s+(?:open|play)\b.*)?$/i);
+  if (search) {
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(search[1].trim())}`;
+  }
+
+  return 'https://www.youtube.com/';
+}
+
 export default function GrokChat() {
   const [messages, setMessages] = useState([
     {
@@ -32,6 +41,7 @@ export default function GrokChat() {
   const [responseMode, setResponseMode] = useState('balanced');
   const [queryType, setQueryType] = useState('general');
   const [includeSearch, setIncludeSearch] = useState(false);
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [sessionId] = useState(`session-${Date.now()}`);
   const messagesEndRef = useRef(null);
 
@@ -53,20 +63,16 @@ export default function GrokChat() {
 
     try {
       if (isYouTubeOpenCommand(input)) {
-        if (window.jarvis?.openYoutube) {
-          await window.jarvis.openYoutube();
+        const youtubeUrl = getYouTubeUrl(input);
+        if (window.jarvis?.isElectron) {
+          setYoutubeOpen(true);
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: 'Opened YouTube inside JARVIS.'
+          }]);
         } else {
-          const youtubeWindow = window.open('https://www.youtube.com/', '_blank');
-          if (!youtubeWindow) {
-            throw new Error('Your browser blocked the YouTube tab. Allow pop-ups for this app and try again.');
-          }
-          youtubeWindow.opener = null;
+          window.location.assign(youtubeUrl);
         }
-
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: 'Opened YouTube in a new window.'
-        }]);
         return;
       }
 
@@ -187,6 +193,28 @@ export default function GrokChat() {
             <span className="text-xs text-slate-300">🔍 Include search context</span>
           </label>
         </div>
+
+        {youtubeOpen && (
+          <section className="mb-6 overflow-hidden rounded-2xl border border-red-500/30 bg-slate-950 shadow-xl" aria-label="YouTube browser">
+            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+              <h2 className="text-sm font-semibold text-slate-100">YouTube</h2>
+              <button
+                type="button"
+                onClick={() => setYoutubeOpen(false)}
+                className="rounded-md bg-slate-800 px-3 py-1 text-sm text-slate-200 hover:bg-slate-700"
+              >
+                Close
+              </button>
+            </div>
+            <webview
+              src={getYouTubeUrl(messages.filter(message => message.role === 'user').at(-1)?.content || '')}
+              title="YouTube"
+              allowpopups="true"
+              webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"
+              className="h-[70vh] min-h-[480px] w-full bg-white"
+            />
+          </section>
+        )}
 
         {/* Chat Area */}
         <div className="mb-6 rounded-2xl border border-purple-500/20 bg-slate-900/60 backdrop-blur p-6 space-y-4 max-h-96 overflow-y-auto">
